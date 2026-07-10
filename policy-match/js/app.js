@@ -1,12 +1,11 @@
 /**
  * =====================================================================
- * app.js — 폼 처리 · 매칭 알고리즘 · 유형별 탭 · 결과 렌더링
- * 의존성: js/data.js 의 전역 상수 ITEMS, REGIONS
- * =====================================================================
- */
+ * app.js — 폼 처리 · 매칭 알고리즘 · 유형별 탭 · 접수상태 · 렌더링
+ * 의존성: js/data.js 의 전역 상수 ITEMS, REGIONS, DATA_VERIFIED_AT
+ * ===================================================================== */
 
 /* ------------------------------------------------------------------ *
- * 0. 상수 & 유틸
+ * 0. 상수 & 상태
  * ------------------------------------------------------------------ */
 
 // 관심도 기반 추천 커트라인: 전체 조건 중 60% 이상 충족하면 "관심 항목"으로 노출
@@ -23,14 +22,21 @@ const TYPES = [
 // 카드에 표시할 유형 라벨 (짧은 버전)
 const TYPE_LABELS = { policy: "정부정책", local: "지자체", contest: "공모전" };
 
-// 카테고리별 태그 색상 (Tailwind 클래스)
-const CATEGORY_STYLES = {
-  "주거":      "bg-blue-100 text-blue-700",
-  "취업":      "bg-emerald-100 text-emerald-700",
-  "금융":      "bg-amber-100 text-amber-800",
-  "복지·양육": "bg-rose-100 text-rose-700",
-  "생활지원":  "bg-teal-100 text-teal-700",
-  "공모전":    "bg-violet-100 text-violet-700",
+// 카테고리별 태그 색상 (css/style.css 의 토큰과 매핑)
+const CATEGORY_COLORS = {
+  "주거": "var(--cat-housing)",
+  "취업": "var(--cat-job)",
+  "금융": "var(--cat-fin)",
+  "복지·양육": "var(--cat-care)",
+  "생활지원": "var(--cat-life)",
+  "공모전": "var(--cat-contest)",
+};
+
+// 행정구역 개편 별칭: 사용자가 선택한 시/도 ↔ 통합 후 명칭 매칭
+// (2026년 개편으로 광주광역시+전라남도 → 전남광주통합특별시)
+const REGION_ALIASES = {
+  "광주광역시": ["전남광주통합특별시"],
+  "전라남도": ["전남광주통합특별시"],
 };
 
 // 취업 상태 코드 → 한글 라벨 (미충족 사유 표시에 사용)
@@ -44,6 +50,9 @@ const $ = (selector) => document.querySelector(selector);
 // 화면 상태: 마지막 매칭 결과 + 현재 선택된 탭
 let lastMatch = null;
 let activeType = "all";
+
+// 사용 중인 데이터셋 — 기본은 번들 데이터(js/data.js), 라이브 JSON 로드 성공 시 교체
+let itemsData = { items: ITEMS, verifiedAt: DATA_VERIFIED_AT, live: false };
 
 /* ------------------------------------------------------------------ *
  * 1. 거주지 드롭다운 초기화 (시/도 → 시/군/구 연동)
@@ -87,7 +96,7 @@ function buildUserProfile(form) {
  * 3. ★ 핵심: 매칭 알고리즘
  * ------------------------------------------------------------------ *
  * 항목마다 "실제로 요구하는 조건"만 골라 검사(checks)하고,
- *   - perfect : 모든 조건 충족 → 맞춤 항목
+ *   - perfect : 모든 조건 충족
  *   - score   : 충족 비율 (관심도 점수, 0~1)
  * 을 계산합니다. 조건이 없는 항목(null)은 검사 대상에서 제외하므로
  * 점수가 불리하게 희석되지 않습니다. (조건이 하나도 없으면 전 국민 대상)
@@ -109,11 +118,12 @@ function evaluateItem(user, item) {
     });
   }
 
-  // ② 거주지 조건 ("전국"이면 무조건 통과)
+  // ② 거주지 조건 ("전국"이면 무조건 통과, 행정구역 개편 별칭 포함 매칭)
   if (!e.regions.includes("전국")) {
+    const userRegions = [user.sido, ...(REGION_ALIASES[user.sido] || [])];
     checks.push({
       label: "거주지",
-      pass: e.regions.includes(user.sido),
+      pass: e.regions.some((r) => userRegions.includes(r)),
       hint: `${e.regions.join(", ")} 거주자 대상`,
     });
   }
@@ -165,15 +175,17 @@ function evaluateItem(user, item) {
 }
 
 /**
- * 전체 항목을 평가한 뒤 두 그룹으로 분류
- *  - perfect : 모든 조건 충족 (신청 가능)
- *  - partial : 60% 이상 충족 (관심도 기반 추천, 점수 내림차순 정렬)
+ * 전체 항목을 평가한 뒤 세 그룹으로 분류
+ *  - perfect : 모든 조건 충족 + 현재 접수 중 → 바로 신청 가능
+ *  - waiting : 모든 조건 충족이지만 접수 기간 아님 → 다음 공고 대기
+ *  - partial : 60% 이상 충족 → 관심 항목 (점수 내림차순)
  */
 function matchItems(user, items) {
   const results = items.map((it) => evaluateItem(user, it));
 
   return {
-    perfect: results.filter((r) => r.perfect),
+    perfect: results.filter((r) => r.perfect && r.item.open),
+    waiting: results.filter((r) => r.perfect && !r.item.open),
     partial: results
       .filter((r) => !r.perfect && r.score >= INTEREST_THRESHOLD)
       .sort((a, b) => b.score - a.score),
@@ -189,29 +201,21 @@ function filterByType(results, typeKey) {
   return typeKey === "all" ? results : results.filter((r) => r.item.type === typeKey);
 }
 
-/** 탭별 매칭 건수 (맞춤 + 관심 합계) — 탭 배지에 표시 */
+/** 탭별 매칭 건수 (신청 가능 + 접수 대기 + 관심 합계) — 탭 배지에 표시 */
 function countByType(typeKey) {
   return (
     filterByType(lastMatch.perfect, typeKey).length +
+    filterByType(lastMatch.waiting, typeKey).length +
     filterByType(lastMatch.partial, typeKey).length
   );
 }
 
 function renderTabs() {
-  const tabsEl = $("#type-tabs");
-  tabsEl.innerHTML = TYPES.map((t) => {
-    const selected = t.key === activeType;
-    return `
-      <button type="button" role="tab" id="tab-${t.key}" data-type="${t.key}"
-              aria-selected="${selected}" aria-controls="result-panel"
-              class="px-3.5 py-2.5 text-sm font-bold -mb-px border-b-2 transition-colors
-                     ${selected ? "text-blue-600 border-blue-600" : "text-slate-500 border-transparent hover:text-slate-700"}">
-        ${t.label}
-        <span class="ml-1 inline-block text-[11px] font-bold px-1.5 py-0.5 rounded-full align-middle
-                     ${selected ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}">${countByType(t.key)}</span>
-      </button>`;
-  }).join("");
-
+  $("#type-tabs").innerHTML = TYPES.map((t) => `
+    <button type="button" class="tab" role="tab" id="tab-${t.key}" data-type="${t.key}"
+            aria-selected="${t.key === activeType}" aria-controls="result-panel">
+      ${t.label}<span class="count">${countByType(t.key)}</span>
+    </button>`).join("");
   $("#result-panel").setAttribute("aria-labelledby", `tab-${activeType}`);
 }
 
@@ -248,88 +252,93 @@ function initTabs() {
  * 5. 결과 렌더링
  * ------------------------------------------------------------------ */
 
-/** XSS 방지용 이스케이프 (Mock 데이터가 API 응답으로 바뀔 때를 대비) */
+/** XSS 방지용 이스케이프 (데이터가 API 응답으로 바뀔 때를 대비) */
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (ch) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])
   );
 }
 
-/** 항목 1건 → 카드 HTML */
-function renderCard(result, { isPartial }) {
+/**
+ * 항목 1건 → 카드 HTML
+ * variant: "ok"(신청 가능) | "waiting"(접수 대기) | "partial"(관심)
+ */
+function renderCard(result, variant) {
   const p = result.item;
-  const tagStyle = CATEGORY_STYLES[p.category] || "bg-slate-100 text-slate-600";
+  const catColor = CATEGORY_COLORS[p.category] || "var(--muted)";
   const regionLabel = p.eligibility.regions.includes("전국") ? "전국" : p.eligibility.regions.join("·");
 
-  // 관심 항목일 때만: 미충족 조건 배지 표시
-  const failedBadges = isPartial
-    ? `<div class="mt-3 flex flex-wrap gap-1.5">
-         ${result.failed
-           .map(
-             (c) => `<span class="inline-flex items-center gap-1 text-xs font-semibold bg-red-50 text-red-600 border border-red-200 rounded-full px-2.5 py-1"
-                           title="${escapeHtml(c.hint)}">✕ ${escapeHtml(c.label)} 미충족 <span class="font-normal text-red-400">(${escapeHtml(c.hint)})</span></span>`
-           )
-           .join("")}
+  // 상태 표시: 접수 여부 + 충족 정보
+  const stateChip = {
+    ok: `<span class="match-state ok">✓ 조건 충족 · 접수 중</span>`,
+    waiting: `<span class="match-state waiting">⏸ 접수 마감 · 다음 공고 대기</span>`,
+    partial: `<span class="match-state warn">조건 충족률 ${Math.round(result.score * 100)}%</span>`,
+  }[variant];
+
+  // 관심 항목: 미충족 조건 배지 (+ 마감된 항목이면 마감 칩 추가)
+  const failedBadges = variant === "partial"
+    ? `<div class="failed-row">
+         ${p.open ? "" : `<span class="chip chip-closed">접수 마감</span>`}
+         ${result.failed.map((c) =>
+           `<span class="failed-badge" title="${escapeHtml(c.hint)}">✕ ${escapeHtml(c.label)} 미충족 <span class="why">(${escapeHtml(c.hint)})</span></span>`
+         ).join("")}
        </div>`
     : "";
 
+  const linkLabel = variant === "ok" ? "자세히 보기 ↗" : "공고 확인하기 ↗";
+
   return `
-    <article class="policy-card bg-white rounded-2xl border ${isPartial ? "border-amber-200" : "border-emerald-200"} shadow-sm p-5 flex flex-col">
-      <!-- 태그 영역: 유형 / 카테고리 / 지역 / 충족 상태 -->
-      <div class="flex flex-wrap items-center gap-1.5">
-        <span class="text-xs font-semibold px-2.5 py-1 rounded-full border border-slate-200 text-slate-500">${escapeHtml(TYPE_LABELS[p.type])}</span>
-        <span class="text-xs font-bold px-2.5 py-1 rounded-full ${tagStyle}">${escapeHtml(p.category)}</span>
-        <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">📍 ${escapeHtml(regionLabel)}</span>
-        ${
-          isPartial
-            ? `<span class="ml-auto text-xs font-bold text-amber-600">조건 충족률 ${Math.round(result.score * 100)}%</span>`
-            : `<span class="ml-auto text-xs font-bold text-emerald-600">✓ 조건 충족</span>`
-        }
+    <article class="policy-card is-${variant}">
+      <div class="tag-row">
+        <span class="chip chip-type">${escapeHtml(TYPE_LABELS[p.type])}</span>
+        <span class="chip chip-cat" style="--cat:${catColor}">${escapeHtml(p.category)}</span>
+        <span class="chip chip-region">📍 ${escapeHtml(regionLabel)}</span>
+        ${stateChip}
       </div>
-
-      <!-- 항목명 & 지원 내용 -->
-      <h4 class="mt-3 text-lg font-bold leading-snug">${escapeHtml(p.name)}</h4>
-      <p class="mt-1.5 text-sm text-blue-700 font-semibold">${escapeHtml(p.summary)}</p>
-
-      <!-- 상세 정보 -->
-      <dl class="mt-3 space-y-1.5 text-sm text-slate-600 flex-1">
-        <div class="flex gap-2"><dt class="shrink-0 w-16 font-semibold text-slate-400">지원 대상</dt><dd>${escapeHtml(p.target)}</dd></div>
-        <div class="flex gap-2"><dt class="shrink-0 w-16 font-semibold text-slate-400">신청 기한</dt><dd>${escapeHtml(p.deadline)}</dd></div>
-        <div class="flex gap-2"><dt class="shrink-0 w-16 font-semibold text-slate-400">신청 방법</dt><dd>${escapeHtml(p.applyMethod)}</dd></div>
+      <h4>${escapeHtml(p.name)}</h4>
+      <p class="policy-benefit">${escapeHtml(p.summary)}</p>
+      <dl class="policy-meta">
+        <div><dt>지원 대상</dt><dd>${escapeHtml(p.target)}</dd></div>
+        <div><dt>신청 기한</dt><dd>${escapeHtml(p.deadline)}</dd></div>
+        <div><dt>신청 방법</dt><dd>${escapeHtml(p.applyMethod)}</dd></div>
       </dl>
-
       ${failedBadges}
-
-      <!-- 상세 링크 -->
-      <a href="${escapeHtml(p.link)}" target="_blank" rel="noopener noreferrer"
-         class="mt-4 inline-flex items-center justify-center gap-1 w-full text-sm font-bold py-2.5 rounded-xl transition-colors
-                ${isPartial ? "bg-amber-50 hover:bg-amber-100 text-amber-700" : "bg-emerald-600 hover:bg-emerald-700 text-white"}"
-         aria-label="${escapeHtml(p.name)} 상세 안내 새 창에서 보기">
-        자세히 보기 ↗
-      </a>
+      <a class="card-link ${variant === "partial" ? "warn" : variant}" href="${escapeHtml(p.link)}" target="_blank" rel="noopener noreferrer"
+         aria-label="${escapeHtml(p.name)} 상세 안내 새 창에서 보기">${linkLabel}</a>
     </article>`;
 }
 
 /** 현재 선택된 탭 기준으로 목록을 다시 그림 */
 function renderLists() {
   const perfect = filterByType(lastMatch.perfect, activeType);
+  const waiting = filterByType(lastMatch.waiting, activeType);
   const partial = filterByType(lastMatch.partial, activeType);
 
   $("#perfect-section").classList.toggle("hidden", perfect.length === 0);
-  $("#perfect-list").innerHTML = perfect.map((r) => renderCard(r, { isPartial: false })).join("");
+  $("#perfect-list").innerHTML = perfect.map((r) => renderCard(r, "ok")).join("");
+
+  $("#waiting-section").classList.toggle("hidden", waiting.length === 0);
+  $("#waiting-list").innerHTML = waiting.map((r) => renderCard(r, "waiting")).join("");
 
   $("#partial-section").classList.toggle("hidden", partial.length === 0);
-  $("#partial-list").innerHTML = partial.map((r) => renderCard(r, { isPartial: true })).join("");
+  $("#partial-list").innerHTML = partial.map((r) => renderCard(r, "partial")).join("");
 
-  $("#empty-state").classList.toggle("hidden", perfect.length + partial.length > 0);
+  // 공모전 탭에서는 실시간 공모전 포털 안내 표시
+  $("#contest-cta").classList.toggle("hidden", activeType !== "contest");
+
+  $("#empty-state").classList.toggle("hidden", perfect.length + waiting.length + partial.length > 0);
 }
 
 /** 검색 직후 결과 영역 전체를 초기화하고 표시 */
 function renderResults() {
   $("#results").classList.remove("hidden");
   $("#result-summary").textContent =
-    `전체 ${ITEMS.length}개 항목 중 바로 신청 가능한 항목 ${lastMatch.perfect.length}건, ` +
-    `관심 가질 만한 항목 ${lastMatch.partial.length}건을 찾았습니다.`;
+    `전체 ${itemsData.items.length}개 항목 중 바로 신청 가능 ${lastMatch.perfect.length}건, ` +
+    `접수 대기 ${lastMatch.waiting.length}건, 관심 항목 ${lastMatch.partial.length}건을 찾았습니다.`;
+  $("#data-note").textContent =
+    `ℹ️ 정보 기준일 ${itemsData.verifiedAt}` +
+    (itemsData.live ? " · 온통청년 API 연동 데이터 포함" : "") +
+    ` — 실제 자격·기한·금액은 각 기관 공고를 반드시 확인하세요.`;
 
   renderTabs();
   renderLists();
@@ -355,7 +364,7 @@ function initForm() {
     }
     errorEl.classList.add("hidden");
 
-    lastMatch = matchItems(buildUserProfile(form), ITEMS);
+    lastMatch = matchItems(buildUserProfile(form), itemsData.items);
     activeType = "all"; // 새 검색은 항상 '전체' 탭부터
     renderResults();
   });
@@ -372,8 +381,44 @@ function initForm() {
 }
 
 /* ------------------------------------------------------------------ *
- * 7. 앱 시작
+ * 7. 라이브 데이터 로드 (GitHub Actions가 매일 갱신하는 data/policies.json)
+ * ------------------------------------------------------------------ *
+ * 같은 오리진의 정적 JSON이라 CORS·키 노출 문제가 없습니다.
+ * 로드 실패(file:// 실행, 네트워크 오류 등) 시 번들 데이터로 폴백합니다.
+ * ------------------------------------------------------------------ */
+
+async function loadLiveData() {
+  try {
+    const res = await fetch("data/policies.json", { cache: "no-store" });
+    if (!res.ok) return;
+    const json = await res.json();
+    if (!Array.isArray(json.items) || json.items.length === 0) return;
+
+    itemsData = {
+      items: json.items,
+      verifiedAt: (json.generatedAt || json.verifiedAt || DATA_VERIFIED_AT).slice(0, 10),
+      live: String(json.source || "").includes("youthcenter"),
+    };
+    $("#footer-verified").textContent = itemsData.verifiedAt;
+
+    // 이미 검색한 상태라면 새 데이터로 결과 갱신
+    if (lastMatch) {
+      lastMatch = matchItems(buildUserProfile($("#user-form")), itemsData.items);
+      renderTabs();
+      renderLists();
+    }
+  } catch (_) {
+    /* 폴백: 번들 데이터(js/data.js) 그대로 사용 */
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. 앱 시작
  * ------------------------------------------------------------------ */
 initRegionSelects();
 initTabs();
 initForm();
+loadLiveData();
+
+// 푸터에 데이터 기준일 표시
+document.getElementById("footer-verified").textContent = DATA_VERIFIED_AT;

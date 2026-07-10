@@ -1,0 +1,359 @@
+/* =====================================================================
+ * 정책파인더 스타일시트 — 자체 CSS (외부 CDN 의존 없음)
+ * 라이트/다크 테마: 디자인 토큰(:root 변수)만 재정의하는 방식
+ * ===================================================================== */
+
+/* ================= 디자인 토큰 (라이트 기본) ================= */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #1b2437;
+  --muted: #5d6880;
+  --faint: #8b94a9;
+  --line: #dfe4ee;
+  --accent: #2757c8;
+  --accent-ink: #ffffff;
+  --ok: #178a60;
+  --ok-ink: #ffffff;
+  --warn: #b57712;
+  --danger: #c2403d;
+  --cat-housing: #2f6bdc;
+  --cat-job: #178a60;
+  --cat-fin: #b57712;
+  --cat-care: #c2497a;
+  --cat-life: #0f8b80;
+  --cat-contest: #7a4fc9;
+  --shadow: 0 1px 2px rgba(27, 36, 55, 0.05), 0 8px 24px rgba(27, 36, 55, 0.06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10141c;
+    --surface: #181e2a;
+    --ink: #e8ecf4;
+    --muted: #a2abc0;
+    --faint: #7c86a0;
+    --line: #2b3346;
+    --accent: #7099f0;
+    --accent-ink: #0e1524;
+    --ok: #4ec99a;
+    --ok-ink: #0c1a14;
+    --warn: #e0a94e;
+    --danger: #ef8280;
+    --cat-housing: #7ea6f5;
+    --cat-job: #4ec99a;
+    --cat-fin: #e0a94e;
+    --cat-care: #ef86b0;
+    --cat-life: #4fc7bb;
+    --cat-contest: #b7a0f2;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+
+/* ================= 베이스 ================= */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo",
+               "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+/* ================= 헤더 ================= */
+.site-header {
+  position: relative;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding: 28px 0 26px;
+}
+.credit {
+  position: absolute;
+  top: 10px; right: 20px;
+  margin: 0;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--faint);
+}
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+.site-header h1 {
+  margin: 6px 0 0;
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.site-header .lede { margin: 8px 0 0; color: var(--muted); font-size: 14.5px; }
+.privacy-note { display: block; margin-top: 6px; font-size: 12px; color: var(--faint); }
+
+/* ================= 섹션 공통 ================= */
+main { padding-bottom: 96px; }
+.section-title {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0; font-size: 17px; font-weight: 800;
+}
+.step-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 13px; font-weight: 800; flex: none;
+}
+
+/* ================= 입력 폼 ================= */
+.form-card {
+  margin-top: 32px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px 18px;
+  margin-top: 22px;
+}
+@media (max-width: 860px) { .form-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .form-grid { grid-template-columns: 1fr; } }
+
+.field label {
+  display: block;
+  font-size: 13px; font-weight: 700;
+  margin-bottom: 6px;
+}
+.req { color: var(--danger); }
+.field input, .field select {
+  width: 100%;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.field input::placeholder { color: var(--faint); }
+.field select:disabled {
+  background: color-mix(in srgb, var(--line) 40%, var(--surface));
+  color: var(--faint);
+}
+
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex; gap: 12px; margin-top: 4px;
+  flex-wrap: wrap;
+}
+.btn {
+  border: none; border-radius: 12px;
+  font: inherit; font-weight: 800; font-size: 15px;
+  padding: 14px 24px; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.btn-primary { flex: 1 1 240px; background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { background: color-mix(in srgb, var(--accent) 86%, var(--ink)); }
+.btn-ghost {
+  flex: 0 1 150px;
+  background: color-mix(in srgb, var(--line) 45%, var(--surface));
+  color: var(--muted); font-weight: 700; font-size: 14px;
+}
+.btn-ghost:hover { background: color-mix(in srgb, var(--line) 75%, var(--surface)); }
+
+.form-error {
+  grid-column: 1 / -1;
+  margin: 0; font-size: 13.5px; font-weight: 700; color: var(--danger);
+}
+
+/* ================= 유형별 탭 ================= */
+.tabs {
+  display: flex; flex-wrap: wrap;
+  margin-top: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  appearance: none; background: none; border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font: inherit; font-size: 13.5px; font-weight: 700;
+  color: var(--muted);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.tab .count {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px; font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 45%, transparent);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.tab[aria-selected="true"] .count {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+/* ================= 결과 ================= */
+.results { margin-top: 44px; }
+.result-summary { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+.data-note { margin: 5px 0 0; font-size: 12px; color: var(--faint); }
+.group { margin-top: 26px; }
+.group-title { margin: 0; font-size: 15.5px; font-weight: 800; }
+.group-title.ok-title { color: var(--ok); }
+.group-title.warn-title { color: var(--warn); }
+.group-title.wait-title { color: var(--accent); }
+.group-hint { margin: 4px 0 0; font-size: 12.5px; color: var(--faint); }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 14px;
+}
+@media (max-width: 720px) { .card-grid { grid-template-columns: 1fr; } }
+
+.policy-card {
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 20px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.policy-card:hover { transform: translateY(-2px); }
+.policy-card.is-ok { border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.policy-card.is-partial { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.policy-card.is-waiting { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+
+.tag-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center;
+  font-size: 11.5px; font-weight: 700;
+  padding: 4px 10px; border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.chip-cat { background: color-mix(in srgb, var(--cat) 14%, transparent); color: var(--cat); }
+.chip-type {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+}
+.chip-region {
+  background: color-mix(in srgb, var(--line) 45%, transparent);
+  color: var(--muted); font-weight: 600;
+}
+.chip-closed {
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--muted);
+}
+.match-state { margin-left: auto; font-size: 12px; font-weight: 800; }
+.match-state.ok { color: var(--ok); }
+.match-state.warn { color: var(--warn); }
+.match-state.waiting { color: var(--muted); }
+
+.policy-card h4 { margin: 12px 0 0; font-size: 17.5px; line-height: 1.35; text-wrap: balance; }
+.policy-benefit { margin: 6px 0 0; font-size: 14px; font-weight: 700; color: var(--accent); }
+
+.policy-meta { margin: 12px 0 0; flex: 1; font-size: 13.5px; color: var(--muted); }
+.policy-meta div { display: flex; gap: 10px; padding: 3px 0; }
+.policy-meta dt { flex: none; width: 58px; margin: 0; font-weight: 700; color: var(--faint); }
+.policy-meta dd { margin: 0; }
+
+.failed-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.failed-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 700;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.failed-badge .why { font-weight: 500; opacity: 0.75; }
+
+.card-link {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  margin-top: 16px;
+  border-radius: 12px;
+  padding: 11px 16px;
+  font-size: 13.5px; font-weight: 800;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.card-link.ok { background: var(--ok); color: var(--ok-ink); }
+.card-link.ok:hover { background: color-mix(in srgb, var(--ok) 86%, var(--ink)); }
+.card-link.warn {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+}
+.card-link.warn:hover { background: color-mix(in srgb, var(--warn) 22%, transparent); }
+.card-link.waiting {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+.card-link.waiting:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+
+/* 공모전 탭 하단 안내 (공모전은 수시 등록되므로 포털 링크 제공) */
+.contest-cta {
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+.contest-cta a { color: var(--accent); font-weight: 700; text-decoration: none; }
+.contest-cta a:hover { text-decoration: underline; }
+
+.empty-state {
+  margin-top: 24px;
+  background: var(--surface);
+  border: 1.5px dashed var(--line);
+  border-radius: 16px;
+  padding: 44px 24px;
+  text-align: center;
+}
+.empty-state .glyph { font-size: 34px; }
+.empty-state p { margin: 10px 0 0; }
+.empty-state .sub { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: 20px 0;
+  font-size: 12px; color: var(--faint);
+}
+.site-footer .portals { margin-top: 6px; }
+.site-footer a { color: var(--muted); font-weight: 600; text-decoration: none; }
+.site-footer a:hover { color: var(--accent); }
+
+.hidden { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  html { scroll-behavior: auto !important; }
+}
