@@ -141,6 +141,18 @@ class TemplateStore:
         if save:
             self.save()
 
+    def remove_last(self, label, save=True):
+        """해당 라벨의 가장 최근 샘플 하나를 삭제 (잘못 학습한 것 취소용)."""
+        samples = self._samples.get(label)
+        if not samples:
+            return False
+        samples.pop()
+        if not samples:
+            del self._samples[label]
+        if save:
+            self.save()
+        return True
+
     def save(self):
         data = {"labels": {label: [s["strokes"] for s in samples]
                            for label, samples in self._samples.items()}}
