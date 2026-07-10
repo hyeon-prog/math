@@ -704,9 +704,15 @@ def _script_rel(base, item, med_h):
     h = max(by1 - by0, med_h * 0.6, 1e-6)
     bcy = _visual_cy(base)
     icy = _visual_cy(item)
-    if icy < bcy - 0.35 * h:
+    # 글자 뒤의 숫자는 첨자일 가능성이 높다 (O_2, x^2) -> 문턱을 크게 낮춤.
+    # 숫자끼리(12)나 기호 뒤는 엄격하게 유지해 일반 수식이 깨지지 않게 한다.
+    t = 0.35
+    if (_is_letter(base) and len(item["label"]) == 1
+            and item["label"].isdigit()):
+        t = 0.15
+    if icy < bcy - t * h:
         return "sup"
-    if icy > bcy + 0.35 * h:
+    if icy > bcy + t * h:
         return "sub"
     return None
 
