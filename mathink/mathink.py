@@ -1,14 +1,14 @@
-"""터치패드 드로잉 오버레이 프로토타입.
+"""매스잉크 (MathInk) — 터치패드 수학·화학식 손글씨 입력기.
 
 Windows 정밀 터치패드(Precision Touchpad)의 HID 디지타이저 원시 입력을 읽어
 화면 위 투명 오버레이 캔버스에 실시간으로 궤적을 그리고,
 기호를 그린 뒤 잠시 멈추면 학습된 템플릿($P 인식기)과 비교해 텍스트로 변환한다.
 
 사용법:
-    python touchpad_draw.py                     # 실행 (F8로 드로잉 모드 토글)
-    python touchpad_draw.py --train "0 1 + ="   # 나열한 기호들을 3번씩 그려 일괄 학습
-    python touchpad_draw.py --probe             # 터치패드 감지 여부만 확인하고 종료
-    python touchpad_draw.py --dump              # GUI 없이 터치 좌표를 콘솔에 출력
+    python mathink.py                     # 실행 (F8로 드로잉 모드 토글)
+    python mathink.py --train "0 1 + ="   # 나열한 기호들을 3번씩 그려 일괄 학습
+    python mathink.py --probe             # 터치패드 감지 여부만 확인하고 종료
+    python mathink.py --dump              # GUI 없이 터치 좌표를 콘솔에 출력
 
 단축키 (드로잉 모드 중):
     F8·Esc      드로잉 모드 끄기 (인식 결과가 클립보드로 복사됨)
@@ -445,14 +445,14 @@ class TouchpadReader(threading.Thread):
         wc = WNDCLASSW()
         wc.lpfnWndProc = self._wndproc
         wc.hInstance = hinst
-        wc.lpszClassName = "TouchpadDrawHiddenWnd"
+        wc.lpszClassName = "MathInkHiddenWnd"
         if not user32.RegisterClassW(ctypes.byref(wc)):
             self.q.put(("error", "윈도우 클래스 등록 실패"))
             return
 
         # 메시지 전용 윈도우는 Raw Input을 못 받으므로, 보이지 않는 일반 창을 만든다
         self.hwnd = user32.CreateWindowExW(
-            0, wc.lpszClassName, "touchpad-draw", 0,
+            0, wc.lpszClassName, "MathInk", 0,
             0, 0, 0, 0, None, None, hinst, None)
         if not self.hwnd:
             self.q.put(("error", "숨김 윈도우 생성 실패"))
@@ -779,7 +779,7 @@ class OverlayApp:
                     self.train_queue.append((label, i, TRAIN_SAMPLES))
 
         self.root = tk.Tk()
-        self.root.title("touchpad-draw")
+        self.root.title("MathInk")
         self.root.configure(bg=TRANSPARENT_KEY)
         self.root.attributes("-fullscreen", True)
         self.root.attributes("-topmost", True)
@@ -1375,7 +1375,7 @@ class OverlayApp:
         win.overrideredirect(True)
         win.attributes("-topmost", True)
         tk.Label(win,
-                 text="터치패드 수학입력 실행 중 — F8: 드로잉 시작  ·  Ctrl+F8: 종료",
+                 text="매스잉크(MathInk) 실행 중 — F8: 드로잉 시작  ·  Ctrl+F8: 종료",
                  bg="#1c1c1c", fg="#ffffff", font=("Malgun Gothic", 11),
                  padx=18, pady=10).pack()
         win.update_idletasks()
@@ -1474,10 +1474,10 @@ def main():
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
 
     # 중복 실행 방지 (바로가기 두 번 클릭 등)
-    kernel32.CreateMutexW(None, False, "touchpad_draw_single_instance")
+    kernel32.CreateMutexW(None, False, "mathink_single_instance")
     if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         user32.MessageBoxW(None, "이미 실행 중입니다.\nF8을 눌러 드로잉을 시작하세요.",
-                           "터치패드 수학입력", 0x40)
+                           "매스잉크", 0x40)
         sys.exit(0)
 
     if "--probe" in sys.argv:

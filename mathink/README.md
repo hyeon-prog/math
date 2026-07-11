@@ -1,4 +1,4 @@
-# touchpad-draw
+# MathInk (매스잉크)
 
 노트북 정밀 터치패드(Windows Precision Touchpad)에 손가락으로 수학 기호·화학식을
 그리면 화면 오버레이에 실시간 표시되고, 학습된 필체와 비교해 텍스트로 변환해주는
@@ -7,10 +7,10 @@
 ## 실행
 
 ```
-python touchpad_draw.py                     # 일반 실행 (또는 바탕화면 바로가기)
-python touchpad_draw.py --train "0 1 + ="   # 나열한 기호를 3번씩 그려 일괄 학습
-python touchpad_draw.py --probe             # 터치패드 감지 확인
-python touchpad_draw.py --dump              # 터치 이벤트를 콘솔에 출력 (디버깅)
+python mathink.py                     # 일반 실행 (또는 바탕화면 바로가기)
+python mathink.py --train "0 1 + ="   # 나열한 기호를 3번씩 그려 일괄 학습
+python mathink.py --probe             # 터치패드 감지 확인
+python mathink.py --dump              # 터치 이벤트를 콘솔에 출력 (디버깅)
 ```
 
 ## 입력 흐름
@@ -82,7 +82,7 @@ C만 U로 바꾸면 O도 자동 대문자). 모양이 다른 쌍(A/a, B/b 등)�
 ## 학습 데이터 관리
 
 - 저장 위치: `templates.json` (지우면 초기화, 수정 도구는 자동 백업 생성)
-- 일괄 학습: `python touchpad_draw.py --train "라벨들"` (기호당 3번)
+- 일괄 학습: `python mathink.py --train "라벨들"` (기호당 3번)
 - 잘못 학습한 직후: 드로잉 모드에서 `Ctrl+Z`
 - 예전에 잘못 학습된 것:
 
