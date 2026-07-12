@@ -88,23 +88,40 @@ C만 U로 바꾸면 O도 자동 대문자). 모양이 다른 쌍(A/a, B/b 등)�
 5. 재학습: `pip install torch` 후 `python train_nn.py --zip CROHME_full_v2.zip`
    (약 8분, 앱 실행에는 torch 불필요)
 
-## 학습 데이터 관리
+## 학습 데이터 관리 (잘못 학습한 것 지우기)
 
-- 저장 위치: `templates.json` (지우면 초기화, 수정 도구는 자동 백업 생성)
-- 일괄 학습: `python mathink.py --train "라벨들"` (기호당 3번)
-- 잘못 학습한 직후: 드로잉 모드에서 `Ctrl+Z`
-- 예전에 잘못 학습된 것:
+개인 필체는 `templates.json`에 저장된다. 상황별 지우는 방법:
+
+**① 방금 실수했을 때** — 터미널 필요 없음. 드로잉 모드에서 그대로 `Ctrl+Z`
+(마지막 학습부터 차례로 취소).
+
+**② 시간이 지난 뒤 발견했을 때** — 터미널에서 관리 도구 사용:
+
+1. **매스잉크를 먼저 종료** (`Ctrl+F8`) — 켜둔 채 지우면 앱이 메모리에 있는
+   데이터를 다시 저장해서 지운 것이 되살아난다
+2. 터미널 열기 (VS Code에서 `` Ctrl+` `` 또는 시작 메뉴 → "명령 프롬프트")
+3. 프로그램 폴더로 이동 후 명령 실행:
 
 ```
-python manage_templates.py list          # 라벨별 샘플 수
-python manage_templates.py show t        # 't'의 샘플들을 그림으로 표시
-python manage_templates.py remove t 9    # 9번 샘플 삭제
-python manage_templates.py remove-last t 2
-python manage_templates.py delete t      # 라벨 통째로 삭제
+cd C:\claude\mathink
+
+python manage_templates.py list          ← 어떤 라벨이 몇 개씩 있는지 목록
+python manage_templates.py show t        ← 't'의 샘플들을 그림으로 확인 (번호 표시)
+python manage_templates.py remove t 9    ← 그중 9번 샘플만 삭제
+python manage_templates.py remove-last t 2   ← 't'의 최근 샘플 2개 삭제
+python manage_templates.py delete t      ← 't' 라벨 통째로 삭제
 ```
 
-- 외부 데이터 추가: `python import_crohme.py CROHME_full_v2.zip [--list | --only "..."]`
-  (zip 출처: [ThomasLech/CROHME_extractor](https://github.com/ThomasLech/CROHME_extractor)의 `data/`)
+4. 바탕화면 바로가기로 매스잉크 다시 실행
+
+- 모든 수정 전에 `templates.json.bak` 백업이 자동 생성된다 (실수하면 이 파일을
+  `templates.json`으로 복사해 복원)
+- **잘못 학습됐다는 신호**: 특정 기호가 갑자기 엉뚱한 것으로 인식되기 시작하면
+  그 엉뚱한 라벨을 `show`로 열어 이상한 모양의 샘플을 찾아 지운다.
+  `list`에서 의도하지 않은 여러 글자짜리 라벨(예: `Na`)이 보여도 오학습이다
+
+**③ 외부 데이터 추가**: `python import_crohme.py CROHME_full_v2.zip [--list | --only "..."]`
+(zip 출처: [ThomasLech/CROHME_extractor](https://github.com/ThomasLech/CROHME_extractor)의 `data/`)
 
 ## 알려진 한계
 
