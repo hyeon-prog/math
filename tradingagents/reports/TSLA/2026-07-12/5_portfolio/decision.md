@@ -1,0 +1,7 @@
+**Rating**: Hold
+
+**Executive Summary**: We maintain a Hold rating on TSLA, preserving a neutral portfolio weight with no new capital additions while the stock consolidates. Tactical actions include implementing a tight stop-loss at $399.0 just below the $400 pivot, with a final exit trigger if the stock breaks the lower Bollinger Band of $371.99. Meanwhile, we will generate yield by selling out-of-the-money covered calls between $400 and $420 over a 3-6 month time horizon.
+
+**Investment Thesis**: The investment thesis on TSLA is a balance between near-term fundamental deterioration and long-term narrative upside. While net income has compressed from $15 billion in 2023 to $3.79 billion in 2025 alongside a tight 3.9% operating margin, the company's aggressive $8.53 billion CAPEX in AI and robotics is self-funded by $6.22 billion in Free Cash Flow. The stock's current consolidation between the 50-day SMA ($409.20) and 200-day SMA ($418.14) reflects market hesitation regarding regulatory friction (such as NHTSA investigations and New Jersey limits) versus active robotaxi deployment progress. Maintaining a neutral exposure allows us to participate in the 'transition premium' of this corporate identity shift without exposing capital to excessive high-beta (1.80) downside risks.
+
+**Time Horizon**: 3-6 months
