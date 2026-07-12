@@ -6,12 +6,21 @@
 
 ## 실행
 
+가장 간단한 방법은 **바탕화면의 "매스잉크" 바로가기 더블클릭** (터미널 불필요).
+
+터미널에서 실행할 때는 **먼저 프로그램 폴더로 이동**해야 한다
+(다른 폴더에서 `python mathink.py`를 치면 파일을 찾지 못해 실행되지 않음):
+
 ```
-python mathink.py                     # 일반 실행 (또는 바탕화면 바로가기)
-python mathink.py --train "0 1 + ="   # 나열한 기호를 3번씩 그려 일괄 학습
-python mathink.py --probe             # 터치패드 감지 확인
-python mathink.py --dump              # 터치 이벤트를 콘솔에 출력 (디버깅)
+cd C:\claude\mathink                  ← 프로그램 폴더로 이동 (필수)
+
+python mathink.py                     ← 일반 실행
+python mathink.py --train "0 1 + ="   ← 나열한 기호를 3번씩 그려 일괄 학습
+python mathink.py --probe             ← 터치패드 감지 확인
+python mathink.py --dump              ← 터치 이벤트를 콘솔에 출력 (디버깅)
 ```
+
+폴더 이동 없이 실행하려면 전체 경로 사용: `python C:\claude\mathink\mathink.py`
 
 ## 입력 흐름
 
