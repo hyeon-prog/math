@@ -17,6 +17,7 @@ Windows 정밀 터치패드(Precision Touchpad)의 HID 디지타이저 원시 �
     1~3         선택한 기호를 인식 후보 1~3번으로 교체 (자동 학습됨)
     U           선택한(없으면 마지막) 글자의 대/소문자 전환
     T           선택한(없으면 마지막) 기호를 직접 입력으로 교정·학습
+    A           자동 타이핑 켬/끔 (기본 켬 - Enter 확정 시 활성 창에 바로 입력)
     Ctrl+Z      마지막 학습 취소 (잘못 학습시킨 샘플 삭제, 연속 사용 가능)
     Backspace   선택 기호 삭제 / 마지막 기호 취소 / 결과 글자 삭제
     Space       인식 결과에 공백 추가
@@ -28,7 +29,8 @@ Windows 정밀 터치패드(Precision Touchpad)의 HID 디지타이저 원시 �
 옆으로 이어 쓴 글자는 멈추지 않아도 자동으로 분리 인식된다.
 식을 다 쓴 뒤 Enter를 누르면 텍스트로 확정된다.
 분수는 분자·가로 막대·분모를 위-가운데-아래로 그리면 (분자)/(분모)로 변환된다.
-윗첨자/아래첨자는 기준 글자보다 위/아래에 치우쳐 그리면 x^2 형태로 변환된다.
+윗첨자/아래첨자는 기준 글자보다 위/아래에 치우쳐 그리면 x², H₂O처럼
+유니코드 첨자로 변환된다 (유니코드에 없는 문자는 ^( )/_( ) 표기로 폴백).
 단, 알파벳끼리는 첨자로 판정하지 않는다 (숫자·기호만 첨자 가능).
 모양이 같은 대소문자(c,o,s,u,v,w,x,z,p,y,j)는 상대 크기로 구분한다:
 같은 식의 다른 대문자만큼 크거나, 가장 작은 글자보다 1.5배 크면 대문자.
@@ -97,6 +99,12 @@ HOTKEY_CAND1 = 12   # 12~14: 인식 후보 1~3으로 교체
 HOTKEY_CAND3 = 14
 HOTKEY_CASE = 15    # U: 선택한 글자의 대/소문자 전환
 HOTKEY_UNDO = 16    # Ctrl+Z: 마지막 학습 취소
+HOTKEY_AUTOTYPE = 17  # A: 자동 타이핑 켬/끔
+
+# SendInput용 상수
+KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_UNICODE = 0x0004
+INPUT_KEYBOARD = 1
 
 # 학습 라벨 입력창이 떠 있는 동안 마우스 잠금/단축키를 잠시 해제하기 위한 내부 메시지
 WM_APP_SUSPEND = 0x8001
@@ -311,6 +319,54 @@ class MouseBlocker(threading.Thread):
         return user32.CallNextHookEx(None, ncode, wparam, lparam)
 
 
+ULONG_PTR = ctypes.c_size_t
+
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [("wVk", wt.WORD), ("wScan", wt.WORD), ("dwFlags", wt.DWORD),
+                ("time", wt.DWORD), ("dwExtraInfo", ULONG_PTR)]
+
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long),
+                ("mouseData", wt.DWORD), ("dwFlags", wt.DWORD),
+                ("time", wt.DWORD), ("dwExtraInfo", ULONG_PTR)]
+
+
+class _INPUT_UNION(ctypes.Union):
+    _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
+
+
+class INPUT(ctypes.Structure):
+    _fields_ = [("type", wt.DWORD), ("u", _INPUT_UNION)]
+
+
+def send_text(text):
+    """활성(포커스) 창의 커서 위치에 유니코드 텍스트를 직접 타이핑한다."""
+    units = text.encode("utf-16-le")
+    n = len(units) // 2
+    if n == 0:
+        return
+    events = (INPUT * (n * 2))()
+    for i in range(n):
+        code = int.from_bytes(units[i * 2:i * 2 + 2], "little")
+        for j, flags in enumerate((KEYEVENTF_UNICODE,
+                                   KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)):
+            ev = events[i * 2 + j]
+            ev.type = INPUT_KEYBOARD
+            ev.u.ki = KEYBDINPUT(0, code, flags, 0, 0)
+    user32.SendInput(n * 2, events, ctypes.sizeof(INPUT))
+
+
+def send_vk(vk):
+    """가상 키 하나(예: Backspace)를 활성 창에 눌렀다 뗀다."""
+    events = (INPUT * 2)()
+    for j, flags in enumerate((0, KEYEVENTF_KEYUP)):
+        events[j].type = INPUT_KEYBOARD
+        events[j].u.ki = KEYBDINPUT(vk, 0, flags, 0, 0)
+    user32.SendInput(2, events, ctypes.sizeof(INPUT))
+
+
 def copy_to_clipboard(text):
     """앱 종료 후에도 유지되도록 Win32 API로 직접 클립보드에 복사."""
     if not user32.OpenClipboard(None):
@@ -486,8 +542,10 @@ class TouchpadReader(threading.Thread):
         if on == self.drawing:
             return
         self.drawing = on
+        # F8을 누른 순간의 활성 창 = 자동 타이핑이 들어갈 대상
+        target = user32.GetForegroundWindow() if on else None
         self._apply_lock(on)
-        self.q.put(("mode", on))
+        self.q.put(("mode", on, target))
 
     def _apply_lock(self, on):
         """커서 고정, 마우스 차단, 드로잉 모드 단축키를 설치/해제한다."""
@@ -510,6 +568,7 @@ class TouchpadReader(threading.Thread):
             user32.RegisterHotKey(self.hwnd, HOTKEY_CASE, 0, ord('U'))
             user32.RegisterHotKey(self.hwnd, HOTKEY_UNDO, MOD_CONTROL,
                                   ord('Z'))
+            user32.RegisterHotKey(self.hwnd, HOTKEY_AUTOTYPE, 0, ord('A'))
             for i in range(3):
                 user32.RegisterHotKey(self.hwnd, HOTKEY_CAND1 + i, 0,
                                       ord('1') + i)
@@ -520,6 +579,7 @@ class TouchpadReader(threading.Thread):
             for hk in (HOTKEY_ESC, HOTKEY_CLEAR, HOTKEY_SAVE, HOTKEY_TRAIN,
                        HOTKEY_BACKSPACE, HOTKEY_SPACE, HOTKEY_COMMIT,
                        HOTKEY_LEFT, HOTKEY_RIGHT, HOTKEY_CASE, HOTKEY_UNDO,
+                       HOTKEY_AUTOTYPE,
                        HOTKEY_CAND1, HOTKEY_CAND1 + 1, HOTKEY_CAND3):
                 user32.UnregisterHotKey(self.hwnd, hk)
 
@@ -555,6 +615,8 @@ class TouchpadReader(threading.Thread):
                 self.q.put(("case",))
             elif wparam == HOTKEY_UNDO:
                 self.q.put(("undo",))
+            elif wparam == HOTKEY_AUTOTYPE:
+                self.q.put(("autotype",))
             elif wparam == HOTKEY_QUIT:
                 self._set_drawing(False)
                 self.q.put(("quit",))
@@ -626,6 +688,36 @@ def _cy(it):
 
 def _wrap(s):
     return s if len(s) <= 1 else f"({s})"
+
+
+# 유니코드 첨자 문자표. 첨자 그룹의 모든 문자가 여기 있으면 H₂O, x²처럼
+# 유니코드로 출력하고, 없는 문자가 섞이면 ^( ) / _( ) 표기로 폴백한다.
+SUP_CHARS = {
+    "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵",
+    "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+    "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
+    "a": "ᵃ", "b": "ᵇ", "c": "ᶜ", "d": "ᵈ", "e": "ᵉ", "f": "ᶠ",
+    "g": "ᵍ", "h": "ʰ", "i": "ⁱ", "j": "ʲ", "k": "ᵏ", "l": "ˡ",
+    "m": "ᵐ", "n": "ⁿ", "o": "ᵒ", "p": "ᵖ", "r": "ʳ", "s": "ˢ",
+    "t": "ᵗ", "u": "ᵘ", "v": "ᵛ", "w": "ʷ", "x": "ˣ", "y": "ʸ",
+    "z": "ᶻ",
+}
+SUB_CHARS = {
+    "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅",
+    "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+    "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎",
+    "a": "ₐ", "e": "ₑ", "h": "ₕ", "i": "ᵢ", "j": "ⱼ", "k": "ₖ",
+    "l": "ₗ", "m": "ₘ", "n": "ₙ", "o": "ₒ", "p": "ₚ", "r": "ᵣ",
+    "s": "ₛ", "t": "ₜ", "u": "ᵤ", "v": "ᵥ", "x": "ₓ",
+}
+
+
+def _unicode_script(s, rel):
+    """문자열 전체를 유니코드 첨자로 변환. 불가능한 문자가 있으면 None."""
+    table = SUP_CHARS if rel == "sup" else SUB_CHARS
+    if all(ch in table for ch in s):
+        return "".join(table[ch] for ch in s)
+    return None
 
 
 def _case_eff_height(shape, bbox):
@@ -742,8 +834,13 @@ def _linear_layout(items):
             if len(bl) > 1 and not (bl.startswith("(") and bl.endswith(")")):
                 out[base_idx] = f"({bl})"
             inner = _parse_layout(group)
-            mark = "^" if rel == "sup" else "_"
-            out.append(mark + (inner if len(inner) == 1 else f"({inner})"))
+            uni = _unicode_script(inner, rel)
+            if uni is not None:
+                out.append(uni)
+            else:
+                mark = "^" if rel == "sup" else "_"
+                out.append(mark + (inner if len(inner) == 1
+                                   else f"({inner})"))
             # base는 그대로 유지: 첨자 뒤 기호는 원래 기준선과 비교
         else:
             out.append(it["label"])
@@ -772,6 +869,8 @@ class OverlayApp:
         self.mode_on = False       # 드로잉 모드 여부 (커서 고정 재적용에 사용)
         self.sel = None            # 교정을 위해 선택된 expr 인덱스
         self.train_history = []    # 이 세션에서 학습한 라벨들 (Ctrl+Z 취소용)
+        self.autotype = True       # 확정 시 대상 창에 자동 타이핑
+        self.type_target = None    # 타이핑이 들어갈 창 (F8 누른 순간의 활성 창)
         self.train_queue = []      # [(라벨, 몇 번째 샘플, 전체 수), ...]
         if train_labels:
             for label in train_labels:
@@ -785,6 +884,14 @@ class OverlayApp:
         self.root.attributes("-topmost", True)
         self.root.attributes("-transparentcolor", TRANSPARENT_KEY)
         self.root.withdraw()
+        # 오버레이가 포커스를 뺏지 않게 (WS_EX_NOACTIVATE):
+        # 드로잉 모드 중에도 원래 앱이 활성 상태로 남아 자동 타이핑이 가능해진다
+        self.root.update_idletasks()
+        GWL_EXSTYLE, WS_EX_NOACTIVATE = -20, 0x08000000
+        hwnd = user32.GetParent(self.root.winfo_id())
+        style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+        user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE,
+                                 style | WS_EX_NOACTIVATE)
 
         self.sw = self.root.winfo_screenwidth()
         self.sh = self.root.winfo_screenheight()
@@ -867,7 +974,8 @@ class OverlayApp:
         rows = [
             [("Enter", "확정"), ("← →", "기호 선택"), ("1·2·3", "후보 교체"),
              ("U", "대/소문자"), ("T", "직접 교정"), ("Backspace", "삭제")],
-            [("Ctrl+Z", "학습 취소"), ("C", "전체 취소"), ("S", "획 저장"),
+            [("A", "자동 타이핑 켬/끔"),
+             ("Ctrl+Z", "학습 취소"), ("C", "전체 취소"), ("S", "획 저장"),
              ("Esc", "종료 후 복사"), ("Ctrl+F8", "프로그램 종료")],
         ]
         tip = ("분수: 분자→막대→분모 (위-가운데-아래)        "
@@ -1193,7 +1301,23 @@ class OverlayApp:
         self.expr = []
         self.result += text
         self._update_result()
-        self._flash(f"입력됨: {text}")
+        if self.autotype and self._focus_target():
+            send_text(text)
+            self._flash(f"입력됨: {text}   (대상 창에 타이핑됨)")
+        else:
+            self._flash(f"입력됨: {text}")
+
+    def _focus_target(self):
+        """자동 타이핑 대상 창을 앞으로 가져온다. 성공하면 True.
+
+        오버레이가 포커스를 가져갔더라도 타이핑 직전에 대상 창을 다시
+        활성화하므로 확실하게 그 창의 커서 위치에 입력된다."""
+        t = self.type_target
+        if not (t and user32.IsWindow(t)):
+            return False
+        user32.SetForegroundWindow(t)
+        time.sleep(0.05)  # 포커스 전환이 반영될 시간
+        return True
 
     def _train_dialog(self):
         """T키: 방금 그린 기호에 라벨을 붙여 학습. 오인식 교정을 겸한다."""
@@ -1268,6 +1392,8 @@ class OverlayApp:
                 elif kind == "mode":
                     self.mode_on = ev[1]
                     if ev[1]:
+                        if len(ev) > 2 and ev[2]:
+                            self.type_target = ev[2]
                         self._compute_region()
                         self.root.deiconify()
                         self.root.lift()
@@ -1338,9 +1464,18 @@ class OverlayApp:
                     elif self.result:
                         self.result = self.result[:-1]
                         self._update_result()
+                        if self.autotype and self._focus_target():
+                            send_vk(VK_BACK)  # 대상 앱에서도 한 글자 지움
                 elif kind == "space":
                     self.result += " "
                     self._update_result()
+                    if self.autotype and self._focus_target():
+                        send_text(" ")
+                elif kind == "autotype":
+                    self.autotype = not self.autotype
+                    state = "켜짐 — 확정 시 활성 창에 바로 타이핑" if self.autotype \
+                        else "꺼짐 — 결과는 Esc로 나갈 때 클립보드로만"
+                    self._flash(f"자동 타이핑 {state}")
                 elif kind == "quit":
                     if self.result:
                         copy_to_clipboard(self.result)

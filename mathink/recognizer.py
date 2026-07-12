@@ -1,8 +1,11 @@
-"""$P 포인트 클라우드 기반 손글씨 기호 인식기.
+"""손글씨 기호 인식기: CNN(신경망) + $P 포인트 클라우드 융합.
 
-획(stroke) 목록을 32개 점의 포인트 클라우드로 정규화한 뒤,
-학습된 템플릿과 탐욕적 클라우드 매칭으로 거리를 계산해 가장 가까운 기호를 찾는다.
-참고: Vatavu, Anthony, Wobbrock - "Gestures as Point Clouds: A $P Recognizer" (2012)
+- CNN: CROHME 데이터셋으로 학습된 분류기 (train_nn.py로 학습,
+  nn_model.npz가 있으면 numpy만으로 추론). 기본 기호의 정확도 담당.
+- $P: 획을 32개 점으로 정규화해 템플릿과 탐욕 매칭. 사용자가 T키로
+  즉시 학습시키는 개인 필체와 CNN이 모르는 기호 담당.
+두 점수를 합쳐 최종 후보를 낸다. 모델 파일이 없으면 $P만 사용.
+참고: Vatavu, Anthony, Wobbrock - "Gestures as Point Clouds" (2012)
 """
 
 import json
@@ -12,6 +15,49 @@ import os
 N_POINTS = 32
 PREFILTER_KEEP = 40        # 근사 거리로 남길 정밀 매칭 후보 수
 STROKE_COUNT_PENALTY = 0.35  # 획 수가 1개 다를 때마다 더할 거리 (최대 2개분)
+IMG_SIZE = 28              # CNN 입력 이미지 크기
+NN_WEIGHT = 0.6            # 융합 시 CNN 점수 가중치 (나머지는 $P)
+
+
+def render_strokes(strokes, size=IMG_SIZE, margin=2):
+    """획들을 size x size 흑백 이미지(numpy float32)로 렌더링.
+
+    좌표 스케일과 무관하게 기호 bbox를 여백을 남기고 중앙 배치한다.
+    학습(train_nn.py)과 추론이 반드시 같은 함수를 써야 한다.
+    """
+    import numpy as np
+    img = np.zeros((size, size), dtype=np.float32)
+    pts = [(p[0], p[1]) for s in strokes for p in s]
+    if not pts:
+        return img
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    x0, y0 = min(xs), min(ys)
+    span = max(max(xs) - x0, max(ys) - y0, 1e-6)
+    scale = (size - 1 - 2 * margin) / span
+    ox = (size - 1 - (max(xs) - x0) * scale) / 2
+    oy = (size - 1 - (max(ys) - y0) * scale) / 2
+    for stroke in strokes:
+        if len(stroke) == 1:
+            stroke = [stroke[0], stroke[0]]
+        for i in range(1, len(stroke)):
+            ax, ay = stroke[i - 1][0], stroke[i - 1][1]
+            bx, by = stroke[i][0], stroke[i][1]
+            gax, gay = (ax - x0) * scale + ox, (ay - y0) * scale + oy
+            gbx, gby = (bx - x0) * scale + ox, (by - y0) * scale + oy
+            n = int(max(abs(gbx - gax), abs(gby - gay))) + 1
+            for t in range(n + 1):
+                fx = gax + (gbx - gax) * t / n
+                fy = gay + (gby - gay) * t / n
+                xi, yi = int(fx), int(fy)
+                for dy in (0, 1):      # 2x2 bilinear splat
+                    for dx in (0, 1):
+                        px, py = xi + dx, yi + dy
+                        if 0 <= px < size and 0 <= py < size:
+                            w = (1 - abs(fx - px)) * (1 - abs(fy - py))
+                            if w > img[py, px]:
+                                img[py, px] = w
+    return img
 
 
 def _dist(a, b):
@@ -127,6 +173,19 @@ class TemplateStore:
             for label, samples in data.get("labels", {}).items():
                 for strokes in samples:
                     self._add_sample(label, strokes)
+        self.nn = self._load_nn()  # CNN 모델이 있으면 융합 인식 사용
+
+    def _load_nn(self):
+        """같은 폴더에 학습된 CNN(nn_model.npz)이 있으면 로드한다."""
+        base = os.path.dirname(os.path.abspath(self.path))
+        model = os.path.join(base, "nn_model.npz")
+        labels = os.path.join(base, "nn_labels.json")
+        if os.path.exists(model) and os.path.exists(labels):
+            try:
+                return NeuralClassifier(model, labels)
+            except Exception:
+                return None
+        return None
 
     def _add_sample(self, label, strokes):
         cloud = preprocess(strokes)
@@ -164,8 +223,8 @@ class TemplateStore:
             return len(self._samples.get(label, []))
         return len(self._samples)
 
-    def recognize(self, strokes, top=3):
-        """[(라벨, 거리), ...]를 거리 오름차순으로 반환. 거리가 작을수록 유사.
+    def _recognize_pp(self, strokes, top=3):
+        """$P 매칭: [(라벨, 거리), ...] 오름차순. 거리가 작을수록 유사.
 
         1단계: 값싼 근사 거리로 전체 템플릿 중 상위 PREFILTER_KEEP개만 남기고
         2단계: 남은 후보에만 정밀($P) 매칭. 획 수 차이에는 페널티를 더해
@@ -188,3 +247,80 @@ class TemplateStore:
                 best[label] = d
         results = sorted(best.items(), key=lambda r: r[1])
         return results[:top]
+
+    def recognize(self, strokes, top=3):
+        """CNN과 $P 점수를 융합한 최종 후보 [(라벨, 점수), ...].
+
+        점수는 0~1로 작을수록 확신이 높다 (기존 거리 표기와 호환).
+        CNN 모델이 없으면 $P 결과를 그대로 반환한다. CNN이 모르는 라벨
+        (사용자가 직접 학습한 기호)은 $P 점수를 가중 없이 온전히 반영해
+        개인 필체가 불리하지 않게 한다.
+        """
+        pp = self._recognize_pp(strokes, top=6)
+        if self.nn is None:
+            return pp[:top]
+        try:
+            nn_cands = self.nn.predict(strokes, top=6)
+        except Exception:
+            return pp[:top]
+        scores = {}
+        for label, d in pp:
+            s = math.exp(-d)
+            scores[label] = s if label not in self.nn.label_set \
+                else (1 - NN_WEIGHT) * s
+        for label, p in nn_cands:
+            scores[label] = scores.get(label, 0.0) + NN_WEIGHT * p
+        ranked = sorted(scores.items(), key=lambda kv: -kv[1])[:top]
+        return [(label, round(1 - s, 4)) for label, s in ranked]
+
+
+class NeuralClassifier:
+    """train_nn.py로 학습한 CNN을 numpy만으로 추론한다 (torch 불필요)."""
+
+    def __init__(self, model_path, labels_path):
+        import numpy as np
+        self.np = np
+        z = np.load(model_path)
+        self.w = {k: z[k].astype(np.float32) for k in z.files}
+        with open(labels_path, encoding="utf-8") as f:
+            self.labels = json.load(f)
+        self.label_set = set(self.labels)
+
+    def _conv(self, x, w, b):
+        """3x3, padding 1 합성곱 (im2col 방식)."""
+        np = self.np
+        C, H, W = x.shape
+        xp = np.pad(x, ((0, 0), (1, 1), (1, 1)))
+        cols = np.empty((C * 9, H * W), dtype=np.float32)
+        k = 0
+        for c in range(C):
+            for i in range(3):
+                for j in range(3):
+                    cols[k] = xp[c, i:i + H, j:j + W].ravel()
+                    k += 1
+        out = w.reshape(w.shape[0], -1) @ cols + b[:, None]
+        return out.reshape(w.shape[0], H, W)
+
+    def _pool(self, x):
+        C, H, W = x.shape
+        return x.reshape(C, H // 2, 2, W // 2, 2).max(axis=(2, 4))
+
+    def predict(self, strokes, top=5):
+        """[(라벨, 확률), ...] 확률 내림차순 top개."""
+        np = self.np
+        w = self.w
+        x = render_strokes(strokes)[None].astype(np.float32)
+        x = np.maximum(self._conv(x, w["c1w"], w["c1b"]), 0)
+        x = self._pool(np.maximum(self._conv(x, w["c2w"], w["c2b"]), 0))
+        x = np.maximum(self._conv(x, w["c3w"], w["c3b"]), 0)
+        x = self._pool(np.maximum(self._conv(x, w["c4w"], w["c4b"]), 0))
+        ns = min(max(len([s for s in strokes if s]), 1), 4)
+        onehot = np.zeros(4, dtype=np.float32)
+        onehot[ns - 1] = 1.0
+        v = np.concatenate([x.ravel(), onehot])
+        h = np.maximum(w["f1w"] @ v + w["f1b"], 0)
+        logits = w["f2w"] @ h + w["f2b"]
+        e = np.exp(logits - logits.max())
+        p = e / e.sum()
+        order = np.argsort(-p)[:top]
+        return [(self.labels[i], float(p[i])) for i in order]
